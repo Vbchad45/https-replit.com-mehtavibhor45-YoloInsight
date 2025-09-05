@@ -1,0 +1,250 @@
+
+
+import os
+import yaml
+import logging
+from pathlib import Path
+from typing import Dict, Any, Optional, Callable
+import torch
+from ultralytics import YOLO
+import matplotlib.pyplot as plt
+import seaborn as sns
+from datetime import datetime
+
+from config.model_config import ModelConfig
+from config.dataset_config import DatasetConfig
+
+logger = logging.getLogger(__name__)
+
+class YOLOTrainer:
+    """YOLOv8 trainer class."""
+    
+    def __init__(self, model_config: ModelConfig, dataset_config: DatasetConfig, output_dir: str):
+        """Initialize the YOLO trainer."""
+        self.model_config = model_config
+        self.dataset_config = dataset_config
+        self.output_dir = output_dir
+        
+        # Create output directories
+        self.train_dir = os.path.join(output_dir, 'train')
+        self.models_dir = os.path.join(output_dir, 'models')
+        Path(self.train_dir).mkdir(parents=True, exist_ok=True)
+        Path(self.models_dir).mkdir(parents=True, exist_ok=True)
+        
+        # Training history
+        self.training_history = {
+            'epoch': [],
+            'train_loss': [],
+            'val_loss': [],
+            'mAP50': [],
+            'mAP50-95': [],
+            'precision': [],
+            'recall': []
+        }
+        
+        # Initialize model
+        self.model = None
+        self.best_model_path = None
+        
+    def train(self, resume: bool = False, status_callback: Optional[Callable] = None) -> str:
+        """Train the YOLOv8 model."""
+        logger.info("Starting YOLOv8 training...")
+        
+        # Validate configurations
+        config_validation = self.model_config.validate_config()
+        if not config_validation['valid']:
+            raise ValueError(f"Invalid model configuration: {config_validation['errors']}")
+        
+        # Create dataset YAML configuration
+        yaml_config_path = self.dataset_config.create_yaml_config(self.train_dir)
+        logger.info(f"Dataset configuration saved to: {yaml_config_path}")
+        
+        # Initialize model
+        model_name = self.model_config.get_model_name()
+        self.model = YOLO(model_name)
+        
+        logger.info(f"Initialized {model_name} model")
+        logger.info(f"Training on device: {self.model_config.device}")
+        
+        # Get training arguments
+        train_args = self.model_config.get_training_args()
+        train_args['data'] = yaml_config_path
+        train_args['project'] = self.train_dir
+        train_args['name'] = f'yolov8{self.model_config.model_size}_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
+        
+        if resume:
+            # Find latest checkpoint
+            checkpoint_path = self._find_latest_checkpoint()
+            if checkpoint_path:
+                train_args['resume'] = checkpoint_path
+                logger.info(f"Resuming training from: {checkpoint_path}")
+        
+        # Setup callbacks
+        if status_callback:
+            def on_train_epoch_end(trainer):
+                epoch = trainer.epoch
+                loss = trainer.loss
+                status_callback(epoch, loss)
+        
+        try:
+            # Start training
+            logger.info(f"Training arguments: {train_args}")
+            results = self.model.train(**train_args)
+            
+            # Save final model
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            model_filename = f'yolov8{self.model_config.model_size}_{self.dataset_config.dataset_name}_{timestamp}.pt'
+            self.best_model_path = os.path.join(self.models_dir, model_filename)
+            
+            # Copy best model to models directory
+            best_pt_path = os.path.join(train_args['project'], train_args['name'], 'weights', 'best.pt')
+            if os.path.exists(best_pt_path):
+                import shutil
+                shutil.copy2(best_pt_path, self.best_model_path)
+                logger.info(f"Best model saved to: {self.best_model_path}")
+            
+            # Save training history
+            self._save_training_history(results)
+            
+            # Generate training plots
+            self._generate_training_plots()
+            
+            logger.info("Training completed successfully!")
+            return self.best_model_path
+            
+        except Exception as e:
+            logger.error(f"Training failed: {str(e)}")
+            raise
+    
+    def _find_latest_checkpoint(self) -> Optional[str]:
+        """Find the latest checkpoint for resuming training."""
+        checkpoints = list(Path(self.train_dir).rglob('last.pt'))
+        if checkpoints:
+            latest_checkpoint = max(checkpoints, key=os.path.getctime)
+            return str(latest_checkpoint)
+        return None
+    
+    def _save_training_history(self, results):
+        """Save training history and metrics."""
+        try:
+            # Extract metrics from results
+            if hasattr(results, 'results_dict'):
+                metrics = results.results_dict
+                
+                # Save metrics to file
+                metrics_file = os.path.join(self.train_dir, 'training_metrics.yaml')
+                with open(metrics_file, 'w') as f:
+                    yaml.dump(metrics, f, default_flow_style=False)
+                
+                logger.info(f"Training metrics saved to: {metrics_file}")
+        
+        except Exception as e:
+            logger.warning(f"Could not save training history: {e}")
+    
+    def _generate_training_plots(self):
+        """Generate training visualization plots."""
+        try:
+            plots_dir = os.path.join(self.train_dir, 'plots')
+            Path(plots_dir).mkdir(parents=True, exist_ok=True)
+            
+            # Find results.csv file
+            results_csv = None
+            for csv_file in Path(self.train_dir).rglob('results.csv'):
+                results_csv = csv_file
+                break
+            
+            if results_csv and results_csv.exists():
+                import pandas as pd
+                
+                # Read results
+                df = pd.read_csv(results_csv)
+                df.columns = df.columns.str.strip()  # Remove whitespace
+                
+                # Create training plots
+                fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+                fig.suptitle('YOLOv8 Training Results', fontsize=16)
+                
+                # Loss plots
+                if 'train/box_loss' in df.columns and 'val/box_loss' in df.columns:
+                    axes[0, 0].plot(df['epoch'], df['train/box_loss'], label='Train Box Loss')
+                    axes[0, 0].plot(df['epoch'], df['val/box_loss'], label='Val Box Loss')
+                    axes[0, 0].set_title('Box Loss')
+                    axes[0, 0].set_xlabel('Epoch')
+                    axes[0, 0].set_ylabel('Loss')
+                    axes[0, 0].legend()
+                    axes[0, 0].grid(True)
+                
+                # mAP plots
+                if 'metrics/mAP50(B)' in df.columns:
+                    axes[0, 1].plot(df['epoch'], df['metrics/mAP50(B)'], label='mAP@0.5')
+                    if 'metrics/mAP50-95(B)' in df.columns:
+                        axes[0, 1].plot(df['epoch'], df['metrics/mAP50-95(B)'], label='mAP@0.5:0.95')
+                    axes[0, 1].set_title('Mean Average Precision')
+                    axes[0, 1].set_xlabel('Epoch')
+                    axes[0, 1].set_ylabel('mAP')
+                    axes[0, 1].legend()
+                    axes[0, 1].grid(True)
+                
+                # Precision and Recall
+                if 'metrics/precision(B)' in df.columns and 'metrics/recall(B)' in df.columns:
+                    axes[1, 0].plot(df['epoch'], df['metrics/precision(B)'], label='Precision')
+                    axes[1, 0].plot(df['epoch'], df['metrics/recall(B)'], label='Recall')
+                    axes[1, 0].set_title('Precision and Recall')
+                    axes[1, 0].set_xlabel('Epoch')
+                    axes[1, 0].set_ylabel('Score')
+                    axes[1, 0].legend()
+                    axes[1, 0].grid(True)
+                
+                # Learning rate
+                if 'lr/pg0' in df.columns:
+                    axes[1, 1].plot(df['epoch'], df['lr/pg0'])
+                    axes[1, 1].set_title('Learning Rate')
+                    axes[1, 1].set_xlabel('Epoch')
+                    axes[1, 1].set_ylabel('Learning Rate')
+                    axes[1, 1].grid(True)
+                
+                plt.tight_layout()
+                plot_path = os.path.join(plots_dir, 'training_curves.png')
+                plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+                plt.close()
+                
+                logger.info(f"Training plots saved to: {plot_path}")
+            
+        except Exception as e:
+            logger.warning(f"Could not generate training plots: {e}")
+    
+    def get_training_info(self) -> Dict[str, Any]:
+        """Get training configuration and status information."""
+        return {
+            'model_config': {
+                'model_size': self.model_config.model_size,
+                'epochs': self.model_config.epochs,
+                'batch_size': self.model_config.batch_size,
+                'img_size': self.model_config.img_size,
+                'device': self.model_config.device
+            },
+            'dataset_config': {
+                'dataset_name': self.dataset_config.dataset_name,
+                'num_classes': self.dataset_config.num_classes,
+                'img_size': self.dataset_config.img_size
+            },
+            'output_directories': {
+                'train_dir': self.train_dir,
+                'models_dir': self.models_dir
+            },
+            'estimated_time_hours': self.model_config.estimate_training_time(
+                self.dataset_config.validate_dataset_structure()['train_image_count']
+            ),
+            'memory_requirements': self.model_config.get_memory_requirements()
+        }
+    
+    def export_model(self, model_path: str, format: str = 'onnx') -> str:
+        """Export trained model to different formats."""
+        try:
+            model = YOLO(model_path)
+            exported_path = model.export(format=format)
+            logger.info(f"Model exported to {format} format: {exported_path}")
+            return exported_path
+        except Exception as e:
+            logger.error(f"Model export failed: {e}")
+            raise
