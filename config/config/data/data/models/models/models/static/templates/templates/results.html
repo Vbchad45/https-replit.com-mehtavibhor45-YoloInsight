@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YOLOv8 Results - Object Detection</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <h1><i class="fas fa-chart-line"></i> Training & Evaluation Results</h1>
+            <p>Analyze your YOLOv8 model performance and metrics</p>
+        </div>
+    </header>
+
+    <!-- Navigation -->
+    <nav class="nav">
+        <div class="nav-container">
+            <a href="/" class="nav-link">
+                <i class="fas fa-home"></i> Home
+            </a>
+            <a href="#overview" class="nav-link active" data-section="overview">
+                <i class="fas fa-tachometer-alt"></i> Overview
+            </a>
+            <a href="#training" class="nav-link" data-section="training">
+                <i class="fas fa-dumbbell"></i> Training Metrics
+            </a>
+            <a href="#evaluation" class="nav-link" data-section="evaluation">
+                <i class="fas fa-chart-bar"></i> Evaluation Results
+            </a>
+            <a href="#visualizations" class="nav-link" data-section="visualizations">
+                <i class="fas fa-images"></i> Visualizations
+            </a>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="container">
+        <!-- Overview Section -->
+        <section id="overview" class="section active">
+            <div class="grid grid-2">
+                <!-- Model Summary -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Model Summary</h3>
+                        <p class="card-subtitle">Key information about your trained model</p>
+                    </div>
+                    <div class="card-body">
+                        <div class="grid grid-2">
+                            <div class="metric-card">
+                                <div class="metric-value" id="model-size">YOLOv8s</div>
+                                <div class="metric-label">Model Architecture</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-value" id="dataset-name">COCO</div>
+                                <div class="metric-label">Training Dataset</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-value" id="training-epochs">100</div>
+                                <div class="metric-label">Training Epochs</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-value" id="model-file-size">14.2 MB</div>
+                                <div class="metric-label">Model File Size</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Performance Metrics -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Performance Metrics</h3>
+                        <p class="card-subtitle">Overall model performance indicators</p>
+                    </div>
+                    <div class="card-body">
+                        <div class="grid grid-2">
+                            <div class="metric-card">
+                                <div class="metric-value text-primary" id="final-map50">0.847</div>
+                                <div class="metric-label">mAP@0.5</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-value text-success" id="final-map50-95">0.623</div>
+                                <div class="metric-label">mAP@0.5:0.95</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-value text-info" id="final-precision">0.781</div>
+                                <div class="metric-label">Precision</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-value text-warning" id="final-recall">0.695</div>
+                                <div class="metric-label">Recall</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Quick Actions</h3>
+                    <p class="card-subtitle">Common actions for your trained model</p>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex flex-wrap gap-3">
+                        <a href="#" class="btn btn-primary" onclick="downloadModel()">
+                            <i class="fas fa-download"></i> Download Model
+                        </a>
+                        <a href="#" class="btn btn-success" onclick="runInference()">
+                            <i class="fas fa-play"></i> Run Inference
+                        </a>
+                        <a href="#" class="btn btn-info" onclick="exportModel()">
+                            <i class="fas fa-share-alt"></i> Export Model
+                        </a>
+                        <a href="#" class="btn btn-warning" onclick="viewLogs()">
+                            <i class="fas fa-file-alt"></i> View Training Logs
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Training Metrics Section -->
+        <section id="training" class="section" style="display: none;">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Training Progress</h3>
+                    <p class="card-subtitle">Training metrics evolution over epochs</p>
+                </div>
+                <div class="card-body">
+                    <div class="grid grid-2">
+                        <div>
+                            <canvas id="lossChart" width="400" height="200"></canvas>
+                        </div>
+                        <div>
+                            <canvas id="mapChart" width="400" height="200"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-2">
+                <!-- Loss Analysis -->
+                <div class="card">
+                    <div class="card-header">
+                        <h4 class="card-title">Loss Analysis</h4>
+                    </div>
+                    <div class="card-body">
+                        <div class="grid grid-2">
+                            <div class="metric-card">
+                                <div class="metric-value" id="final-train-loss">0.0234</div>
+                                <div class="metric-label">Final Training Loss</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-value" id="final-val-loss">0.0267</div>
+                                <div class="metric-label">Final Validation Loss</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-value" id="best-epoch">87</div>
+                                <div class="metric-label">Best Epoch</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-value" id="training-time">2.4h</div>
+                                <div class="metric-label">Training Time</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Learning Rate Schedule -->
+                <div class="card">
+                    <div class="card-header">
+                        <h4 class="card-title">Learning Rate Schedule</h4>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="lrChart" width="400" height="200"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Evaluation Results Section -->
+        <section id="evaluation" class="section" style="display: none;">
+            <div class="grid grid-2">
+                <!-- Per-Class Performance -->
+                <div class="card">
+                    <div class="card-header">
+                        <h4 class="card-title">Per-Class Performance</h4>
+                        <p class="card-subtitle">mAP@0.5 for each object class</p>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="classPerformanceChart" width="400" height="300"></canvas>
+                    </div>
+                </div>
+
+                <!-- Precision-Recall Curve -->
+                <div class="card">
+                    <div class="card-header">
+                        <h4 class="card-title">Precision-Recall Analysis</h4>
+                        <p class="card-subtitle">Model performance trade-offs</p>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="prCurveChart" width="400" height="300"></canvas>
+                        <div class="mt-3">
+                            <div class="grid grid-2">
+                                <div class="metric-card">
+                                    <div class="metric-value" id="f1-score">0.735</div>
+                                    <div class="metric-label">F1 Score</div>
+                                </div>
+                                <div class="metric-card">
+                                    <div class="metric-value" id="auc-pr">0.812</div>
+                                    <div class="metric-label">AUC-PR</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Confusion Matrix -->
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="card-title">Confusion Matrix</h4>
+                    <p class="card-subtitle">Class prediction accuracy (Top 10 classes)</p>
+                </div>
+                <div class="card-body">
+                    <div class="text-center">
+                        <canvas id="confusionMatrix" width="600" height="400"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Detection Statistics -->
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="card-title">Detection Statistics</h4>
+                    <p class="card-subtitle">Analysis of detection patterns</p>
+                </div>
+                <div class="card-body">
+                    <div class="grid grid-4">
+                        <div class="metric-card">
+                            <div class="metric-value" id="total-detections">15,847</div>
+                            <div class="metric-label">Total Detections</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-value" id="avg-confidence">0.67</div>
+                            <div class="metric-label">Avg Confidence</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-value" id="fps">45.2</div>
+                            <div class="metric-label">Inference FPS</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-value" id="memory-usage">1.2 GB</div>
+                            <div class="metric-label">GPU Memory</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Visualizations Section -->
+        <section id="visualizations" class="section" style="display: none;">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Sample Detection Results</h3>
+                    <p class="card-subtitle">Visual examples of model predictions</p>
+                </div>
+                <div class="card-body">
+                    <div class="grid grid-3" id="sample-detections">
+                        <!-- Sample detection images will be loaded here -->
+                        <div class="image-container">
+                            <img src="https://via.placeholder.com/400x300?text=Sample+Detection+1" alt="Sample Detection 1">
+                            <div class="image-overlay">
+                                <h6>Street Scene</h6>
+                                <p>12 objects detected</p>
+                            </div>
+                        </div>
+                        <div class="image-container">
+                            <img src="https://via.placeholder.com/400x300?text=Sample+Detection+2" alt="Sample Detection 2">
+                            <div class="image-overlay">
+                                <h6>Indoor Scene</h6>
+                                <p>8 objects detected</p>
+                            </div>
+                        </div>
+                        <div class="image-container">
+                            <img src="https://via.placeholder.com/400x300?text=Sample+Detection+3" alt="Sample Detection 3">
+                            <div class="image-overlay">
+                                <h6>Sports Event</h6>
+                                <p>15 objects detected</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Training Visualizations -->
+            <div class="grid grid-2">
+                <div class="card">
+                    <div class="card-header">
+                        <h4 class="card-title">Training Images</h4>
+                        <p class="card-subtitle">Sample augmented training data</p>
+                    </div>
+                    <div class="card-body">
+                        <div class="image-container">
+                            <img src="https://via.placeholder.com/500x300?text=Training+Batch+Sample" alt="Training Batch">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h4 class="card-title">Validation Results</h4>
+                        <p class="card-subtitle">Model predictions on validation set</p>
+                    </div>
+                    <div class="card-body">
+                        <div class="image-container">
+                            <img src="https://via.placeholder.com/500x300?text=Validation+Results" alt="Validation Results">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Export Modal -->
+    <div class="modal fade" id="exportModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Export Model</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Choose export format for your trained model:</p>
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-outline-primary" onclick="exportFormat('pytorch')">
+                            <i class="fab fa-python"></i> PyTorch (.pt)
+                        </button>
+                        <button class="btn btn-outline-primary" onclick="exportFormat('onnx')">
+                            <i class="fas fa-cogs"></i> ONNX (.onnx)
+                        </button>
+                        <button class="btn btn-outline-primary" onclick="exportFormat('tensorrt')">
+                            <i class="fas fa-microchip"></i> TensorRT (.engine)
+                        </button>
+                        <button class="btn btn-outline-primary" onclick="exportFormat('coreml')">
+                            <i class="fab fa-apple"></i> CoreML (.mlmodel)
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            setupEventListeners();
+            initializeCharts();
+            loadResultsData();
+        });
+
+        // Event listeners
+        function setupEventListeners() {
+            // Navigation
+            document.querySelectorAll('.nav-link').forEach(link => {
+                link.addEventListener('click', function(e) {
+                    if (this.dataset.section) {
+                        e.preventDefault();
+                        const section = this.dataset.section;
+                        showSection(section);
+                        
+                        // Update active nav
+                        document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+                        this.classList.add('active');
+                    }
+                });
+            });
+        }
+
+        // Show section
+        function showSection(sectionName) {
+            document.querySelectorAll('.section').forEach(section => {
+                section.style.display = 'none';
+            });
+            document.getElementById(sectionName).style.display = 'block';
+        }
+
+        // Initialize charts
+        function initializeCharts() {
+            // Loss Chart
+            const lossCtx = document.getElementById('lossChart').getContext('2d');
+            new Chart(lossCtx, {
+                type: 'line',
+                data: {
+                    labels: Array.from({length: 100}, (_, i) => i + 1),
+                    datasets: [{
+                        label: 'Training Loss',
+                        data: generateLossData(100, 0.8, 0.02),
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        tension: 0.4
+                    }, {
+                        label: 'Validation Loss',
+                        data: generateLossData(100, 0.9, 0.03),
+                        borderColor: '#ef4444',
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            title: {
+                                display: true,
+                                text: 'Loss'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Epoch'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true
+                        }
+                    }
+                }
+            });
+
+            // mAP Chart
+            const mapCtx = document.getElementById('mapChart').getContext('2d');
+            new Chart(mapCtx, {
+                type: 'line',
+                data: {
+                    labels: Array.from({length: 100}, (_, i) => i + 1),
+                    datasets: [{
+                        label: 'mAP@0.5',
+                        data: generateMapData(100, 0.85),
+                        borderColor: '#10b981',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        tension: 0.4
+                    }, {
+                        label: 'mAP@0.5:0.95',
+                        data: generateMapData(100, 0.62),
+                        borderColor: '#f59e0b',
+                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 1,
+                            title: {
+                                display: true,
+                                text: 'mAP'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Epoch'
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Learning Rate Chart
+            const lrCtx = document.getElementById('lrChart').getContext('2d');
+            new Chart(lrCtx, {
+                type: 'line',
+                data: {
+                    labels: Array.from({length: 100}, (_, i) => i + 1),
+                    datasets: [{
+                        label: 'Learning Rate',
+                        data: generateLrData(100),
+                        borderColor: '#8b5cf6',
+                        backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            type: 'logarithmic',
+                            title: {
+                                display: true,
+                                text: 'Learning Rate'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Epoch'
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Per-Class Performance Chart
+            const classCtx = document.getElementById('classPerformanceChart').getContext('2d');
+            new Chart(classCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['person', 'car', 'bicycle', 'dog', 'cat', 'bus', 'truck', 'bird', 'horse', 'boat'],
+                    datasets: [{
+                        label: 'mAP@0.5',
+                        data: [0.89, 0.85, 0.78, 0.82, 0.79, 0.91, 0.87, 0.74, 0.76, 0.69],
+                        backgroundColor: 'rgba(59, 130, 246, 0.6)',
+                        borderColor: '#3b82f6',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 1,
+                            title: {
+                                display: true,
+                                text: 'mAP@0.5'
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Precision-Recall Curve
+            const prCtx = document.getElementById('prCurveChart').getContext('2d');
+            new Chart(prCtx, {
+                type: 'line',
+                data: {
+                    labels: Array.from({length: 11}, (_, i) => (i / 10).toFixed(1)),
+                    datasets: [{
+                        label: 'Precision-Recall Curve',
+                        data: [0.95, 0.92, 0.88, 0.84, 0.79, 0.74, 0.68, 0.61, 0.52, 0.41, 0.28],
+                        borderColor: '#ef4444',
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 1,
+                            title: {
+                                display: true,
+                                text: 'Precision'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Recall'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Generate sample data
+        function generateLossData(epochs, startLoss, endLoss) {
+            const data = [];
+            for (let i = 0; i < epochs; i++) {
+                const progress = i / epochs;
+                const loss = startLoss * Math.exp(-3 * progress) + endLoss + Math.random() * 0.01;
+                data.push(loss);
+            }
+            return data;
+        }
+
+        function generateMapData(epochs, maxMap) {
+            const data = [];
+            for (let i = 0; i < epochs; i++) {
+                const progress = i / epochs;
+                const map = maxMap * (1 - Math.exp(-2 * progress)) + Math.random() * 0.02;
+                data.push(Math.min(map, maxMap));
+            }
+            return data;
+        }
+
+        function generateLrData(epochs) {
+            const data = [];
+            const initialLr = 0.01;
+            for (let i = 0; i < epochs; i++) {
+                const progress = i / epochs;
+                let lr = initialLr;
+                
+                // Warmup phase
+                if (progress < 0.1) {
+                    lr = initialLr * (progress / 0.1);
+                } else {
+                    // Cosine annealing
+                    lr = initialLr * 0.5 * (1 + Math.cos(Math.PI * (progress - 0.1) / 0.9));
+                }
+                
+                data.push(lr);
+            }
+            return data;
+        }
+
+        // Load results data
+        async function loadResultsData() {
+            // This would typically load actual results from the server
+            // For now, we'll use the sample data already in the HTML
+        }
+
+        // Action functions
+        function downloadModel() {
+            // Implement model download
+            window.open('/api/download_model/latest', '_blank');
+        }
+
+        function runInference() {
+            // Navigate to inference section
+            window.location.href = '/#inference';
+        }
+
+        function exportModel() {
+            const modal = new bootstrap.Modal(document.getElementById('exportModal'));
+            modal.show();
+        }
+
+        function exportFormat(format) {
+            // Implement export functionality
+            console.log('Exporting model in format:', format);
+            alert(`Exporting model in ${format} format...`);
+        }
+
+        function viewLogs() {
+            // Implement log viewing
+            alert('Opening training logs...');
+        }
+    </script>
+</body>
+</html>
